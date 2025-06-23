@@ -15,6 +15,16 @@ return new class extends Migration
             $table->string('company_logo')->nullable();
             $table->timestamp('partner_since')->nullable();
             $table->enum('partner_status', ['active', 'inactive', 'suspended'])->nullable();
+            $table->string('business_registration_number')->nullable();
+            $table->string('tax_identification_number')->nullable();
+            $table->string('business_address')->nullable();
+            $table->string('contact_person_name')->nullable();
+            $table->string('contact_person_position')->nullable();
+            $table->string('contact_person_phone')->nullable();
+            $table->string('verification_documents')->nullable();
+            $table->text('verification_notes')->nullable();
+            $table->timestamp('verified_at')->nullable();
+            $table->integer('verified_by')->nullable();
         });
     }
 
@@ -27,7 +37,17 @@ return new class extends Migration
                 'company_website',
                 'company_logo',
                 'partner_since',
-                'partner_status'
+                'partner_status',
+                'business_registration_number',
+                'tax_identification_number',
+                'business_address',
+                'contact_person_name',
+                'contact_person_position',
+                'contact_person_phone',
+                'verification_documents',
+                'verification_notes',
+                'verified_at',
+                'verified_by'
             ]);
         });
     }

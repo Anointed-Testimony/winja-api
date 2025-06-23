@@ -19,6 +19,7 @@ class AuthController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8',
+            'whatsapp_number' => 'required|string|max:20',
             'age_group' => 'nullable|string',
             'geo_location' => 'nullable|string',
             'academic_level' => 'nullable|string',
@@ -37,6 +38,7 @@ class AuthController extends Controller
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
+            'whatsapp_number' => $validated['whatsapp_number'],
             'age_group' => $validated['age_group'],
             'geo_location' => $validated['geo_location'],
             'academic_level' => $validated['academic_level'],
@@ -46,15 +48,29 @@ class AuthController extends Controller
             'referred_by' => $validated['referred_by'] ?? null,
         ]);
 
+        // Create user settings
+        $user->settings()->create([
+            'whatsapp_number' => $validated['whatsapp_number'],
+            'email_notifications' => $validated['notification_preferences']['email'] ?? true,
+            'whatsapp_notifications' => $validated['notification_preferences']['whatsapp'] ?? true,
+        ]);
+
+        // Award signup points
+        \App\Services\PointsService::awardSignupPoints($user->id);
+
         // If user was referred, create a referral record
         if (isset($validated['referred_by'])) {
             $referrer = User::where('referral_code', $validated['referred_by'])->first();
             if ($referrer) {
-                \App\Models\Referral::create([
+                $referral = \App\Models\Referral::create([
                     'referrer_id' => $referrer->id,
                     'referred_id' => $user->id,
-                    'status' => 'pending',
+                    'status' => 'completed', // Mark as completed immediately
+                    'completed_at' => now(),
                 ]);
+
+                // Award referral points to the referrer
+                \App\Services\PointsService::awardReferralPoints($referrer->id, $user->id);
 
                 // Check for new badges for the referrer
                 $referrer->checkAndAwardBadges();

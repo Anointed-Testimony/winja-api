@@ -22,6 +22,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'whatsapp_number',
         'age_group',
         'geo_location',
         'academic_level',
@@ -40,6 +41,16 @@ class User extends Authenticatable
         'company_logo',
         'partner_since',
         'partner_status',
+        'business_registration_number',
+        'tax_identification_number',
+        'business_address',
+        'contact_person_name',
+        'contact_person_position',
+        'contact_person_phone',
+        'verification_documents',
+        'verification_notes',
+        'verified_at',
+        'verified_by',
     ];
 
     /**
@@ -64,6 +75,8 @@ class User extends Authenticatable
         'is_premium' => 'boolean',
         'last_login_at' => 'datetime',
         'partner_since' => 'datetime',
+        'verified_at' => 'datetime',
+        'verification_documents' => 'array',
     ];
 
     public function savedOpportunities()
@@ -158,6 +171,22 @@ class User extends Authenticatable
 
     public function otps() {
         return $this->hasMany(Otp::class);
+    }
+
+    public function settings() {
+        return $this->hasOne(UserSetting::class);
+    }
+
+    public function userPoints() {
+        return $this->hasOne(UserPoints::class);
+    }
+
+    public function pointsTransactions() {
+        return $this->hasMany(PointsTransaction::class);
+    }
+
+    public function notifications() {
+        return $this->hasMany(Notification::class);
     }
 
     public function isPartner() {

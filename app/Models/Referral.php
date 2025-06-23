@@ -50,6 +50,20 @@ class Referral extends Model
             'status' => 'completed',
             'completed_at' => now(),
         ]);
+
+        // Award referral points to the referrer
+        $settings = \App\Models\PointsSetting::getCurrent();
+        $referrer = $this->referrer;
+        
+        if ($referrer) {
+            $userPoints = $referrer->userPoints;
+            if (!$userPoints) {
+                $userPoints = \App\Models\UserPoints::getOrCreateForUser($referrer->id);
+            }
+            
+            // Award referral points
+            $userPoints->addPoints($settings->referral_points, 'referral');
+        }
     }
 
     public function expire()

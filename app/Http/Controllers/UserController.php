@@ -58,6 +58,20 @@ class UserController extends Controller
         $user->save();
         return response()->json(['message' => 'User activated']);
     }
+
+    // Get user stats (saved and applied opportunities)
+    public function getUserStats()
+    {
+        $user = auth()->user();
+        
+        $savedCount = $user->savedOpportunities()->count();
+        $appliedCount = $user->applicationTrackers()->count();
+        
+        return response()->json([
+            'saved_count' => $savedCount,
+            'applied_count' => $appliedCount,
+        ]);
+    }
 } 
  
  

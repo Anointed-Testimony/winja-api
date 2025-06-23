@@ -12,7 +12,8 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('opportunity_id');
             $table->unsignedBigInteger('partner_id')->nullable();
-            $table->enum('status', ['pending', 'approved', 'rejected'])->default('pending');
+            $table->unsignedBigInteger('ad_campaign_id')->nullable();
+            $table->enum('status', ['pending', 'approved', 'rejected', 'active', 'expired'])->default('pending');
             $table->enum('payment_status', ['unpaid', 'paid'])->default('unpaid');
             $table->timestamp('sponsored_from')->nullable();
             $table->timestamp('sponsored_to')->nullable();
@@ -20,6 +21,10 @@ return new class extends Migration
 
             $table->foreign('opportunity_id')->references('id')->on('opportunities')->onDelete('cascade');
             $table->foreign('partner_id')->references('id')->on('users')->onDelete('set null');
+            $table->foreign('ad_campaign_id')->references('id')->on('ad_campaigns')->onDelete('set null');
+            
+            // Prevent duplicate sponsorships for the same opportunity
+            $table->unique('opportunity_id', 'unique_opportunity_sponsorship');
         });
     }
 
@@ -28,19 +33,3 @@ return new class extends Migration
         Schema::dropIfExists('sponsored_opportunities');
     }
 }; 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 

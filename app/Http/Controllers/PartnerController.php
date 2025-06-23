@@ -99,17 +99,37 @@ class PartnerController extends Controller
 
     public function getCurrentPartnerStatus()
     {
-        $user = auth()->user();
-        if (!($user instanceof \App\Models\User)) {
-            $user = \App\Models\User::find($user->id);
+        try {
+            if (!auth()->check()) {
+                return response()->json([
+                    'status' => 'not_applied',
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
+            $user = auth()->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'status' => 'not_applied',
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            $status = $user->partner_status ?? 'not_applied';
+            
+            return response()->json([
+                'status' => $status,
+                'message' => 'Status retrieved successfully'
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Partner status error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to retrieve partner status'
+            ], 500);
         }
-        Log::info('Current user: ' . ($user ? $user->id : 'null'));
-        Log::info('Partner status: ' . ($user ? $user->partner_status : 'null'));
-        $status = $user ? $user->partner_status : null;
-        if ($status === null) {
-            return response()->json(['partner_status' => 'not_applied']);
-        }
-        return response()->json(['partner_status' => $status]);
     }
 
     public function all()
@@ -160,6 +180,14 @@ class PartnerController extends Controller
             'company_description' => 'required|string',
             'company_website' => 'required|url|max:255',
             'company_logo' => 'nullable|image|max:2048',
+            'business_registration_number' => 'required|string|max:255',
+            'tax_identification_number' => 'required|string|max:255',
+            'business_address' => 'required|string|max:255',
+            'contact_person_name' => 'required|string|max:255',
+            'contact_person_position' => 'required|string|max:255',
+            'contact_person_phone' => 'required|string|max:255',
+            'verification_documents' => 'required|array',
+            'verification_documents.*' => 'required|file|mimes:pdf,jpg,jpeg,png|max:5120',
         ]);
 
         $updateData = [
@@ -170,15 +198,54 @@ class PartnerController extends Controller
             'company_name' => $data['company_name'],
             'company_description' => $data['company_description'],
             'company_website' => $data['company_website'],
+            'business_registration_number' => $data['business_registration_number'],
+            'tax_identification_number' => $data['tax_identification_number'],
+            'business_address' => $data['business_address'],
+            'contact_person_name' => $data['contact_person_name'],
+            'contact_person_position' => $data['contact_person_position'],
+            'contact_person_phone' => $data['contact_person_phone'],
         ];
 
+        // Handle company logo
         if ($request->hasFile('company_logo')) {
             $b2 = new \App\Services\B2StorageService();
             $updateData['company_logo'] = $b2->uploadImage($request->file('company_logo'), 'partner-logos');
         }
 
+        // Handle verification documents
+        $documentUrls = [];
+        if ($request->hasFile('verification_documents')) {
+            $b2 = new \App\Services\B2StorageService();
+            foreach ($request->file('verification_documents') as $document) {
+                $documentUrls[] = $b2->uploadImage($document, 'partner-documents');
+            }
+            $updateData['verification_documents'] = json_encode($documentUrls);
+        }
+
         $user->update($updateData);
         return response()->json($user->fresh(), 200);
+    }
+
+    public function verifyPartner(Request $request, $id)
+    {
+        $this->authorize('verify-partners');
+        
+        $partner = User::where('user_type', 'partner')->findOrFail($id);
+        
+        $data = $request->validate([
+            'partner_status' => 'required|in:active,inactive,suspended',
+            'verification_notes' => 'nullable|string',
+        ]);
+
+        $data['verified_at'] = now();
+        $data['verified_by'] = auth()->id();
+
+        $partner->update($data);
+
+        // Send notification to partner
+        // TODO: Implement notification system
+
+        return response()->json($partner->fresh());
     }
 } 
  

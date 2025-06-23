@@ -3,11 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\Opportunity;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use App\Services\B2StorageService;
+use App\Services\NotificationService;
 
 class OpportunityController extends Controller
 {
@@ -40,16 +43,87 @@ class OpportunityController extends Controller
                 }
             }],
         ]);
+        
         // Ensure sponsor is set to null if not present
         if (!array_key_exists('sponsor', $data)) {
             $data['sponsor'] = null;
         }
+        
         if ($request->hasFile('image')) {
             $b2 = new B2StorageService();
             $data['image'] = $b2->uploadImage($request->file('image'), 'opportunities');
         }
-        $opp = Opportunity::create($data);
-        return response()->json($opp->load('type'), 201);
+        
+        // If the uploader is a partner, force status to 'pending' for admin approval
+        $user = auth()->user();
+        if ($user && $user->user_type === 'partner') {
+            $data['status'] = 'pending';
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            $opportunity = Opportunity::create($data);
+            $opportunity->load('type'); // Load the relationship for notifications
+            
+            // Only send notifications for active opportunities
+            if ($opportunity->status === 'Active') {
+                // Get users to notify (exclude the creator if it's a partner)
+                $usersToNotify = User::where('status', 'active');
+                
+                // If created by a partner, exclude them from notifications
+                if ($user && $user->user_type === 'partner') {
+                    $usersToNotify->where('id', '!=', $user->id);
+                }
+                
+                $users = $usersToNotify->get();
+                
+                // Send notifications asynchronously to avoid blocking the response
+                if ($users->isNotEmpty()) {
+                    // Use dispatch to run in background (requires queue setup)
+                    dispatch(function () use ($opportunity, $users) {
+                        try {
+                            NotificationService::sendOpportunityNotification($opportunity, $users);
+                        } catch (\Exception $e) {
+                            Log::error('Failed to send opportunity notifications', [
+                                'opportunity_id' => $opportunity->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    })->afterResponse();
+                }
+                
+                Log::info('Opportunity created and notifications queued', [
+                    'opportunity_id' => $opportunity->id,
+                    'title' => $opportunity->title,
+                    'users_count' => $users->count(),
+                    'created_by' => $user ? $user->id : null,
+                ]);
+            } else {
+                Log::info('Opportunity created (no notifications - status not active)', [
+                    'opportunity_id' => $opportunity->id,
+                    'title' => $opportunity->title,
+                    'status' => $opportunity->status,
+                ]);
+            }
+            
+            DB::commit();
+            
+            return response()->json($opportunity, 201);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Failed to create opportunity', [
+                'error' => $e->getMessage(),
+                'data' => $data,
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to create opportunity',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function show($id)
@@ -60,7 +134,9 @@ class OpportunityController extends Controller
 
     public function update(Request $request, $id)
     {
-        $opp = Opportunity::findOrFail($id);
+        $opportunity = Opportunity::findOrFail($id);
+        $originalStatus = $opportunity->status;
+        
         $data = $request->validate([
             'title' => 'sometimes|required|string',
             'sponsor' => 'nullable|string',
@@ -79,12 +155,71 @@ class OpportunityController extends Controller
                 }
             }],
         ]);
+        
         if ($request->hasFile('image')) {
             $b2 = new B2StorageService();
             $data['image'] = $b2->uploadImage($request->file('image'), 'opportunities');
         }
-        $opp->update($data);
-        return response()->json($opp->load('type'));
+        
+        try {
+            DB::beginTransaction();
+            
+            $opportunity->update($data);
+            $opportunity->load('type'); // Load the relationship for notifications
+            
+            // Send notifications if status changed from pending to active
+            if ($originalStatus === 'pending' && $opportunity->status === 'Active') {
+                // Get users to notify (exclude the creator if it's a partner)
+                $usersToNotify = User::where('status', 'active');
+                
+                // If created by a partner, exclude them from notifications
+                if ($opportunity->partner_id) {
+                    $usersToNotify->where('id', '!=', $opportunity->partner_id);
+                }
+                
+                $users = $usersToNotify->get();
+                
+                // Send notifications asynchronously
+                if ($users->isNotEmpty()) {
+                    dispatch(function () use ($opportunity, $users) {
+                        try {
+                            NotificationService::sendOpportunityNotification($opportunity, $users);
+                        } catch (\Exception $e) {
+                            Log::error('Failed to send opportunity notifications after status update', [
+                                'opportunity_id' => $opportunity->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    })->afterResponse();
+                }
+                
+                Log::info('Opportunity status updated to active and notifications queued', [
+                    'opportunity_id' => $opportunity->id,
+                    'title' => $opportunity->title,
+                    'users_count' => $users->count(),
+                    'previous_status' => $originalStatus,
+                    'new_status' => $opportunity->status,
+                ]);
+            }
+            
+            DB::commit();
+            
+            return response()->json($opportunity);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Failed to update opportunity', [
+                'opportunity_id' => $id,
+                'error' => $e->getMessage(),
+                'data' => $data,
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to update opportunity',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function destroy($id)

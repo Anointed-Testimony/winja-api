@@ -4,39 +4,52 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
-class SponsoredOpportunity extends Model
+class AdCampaign extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'opportunity_id',
         'partner_id',
-        'ad_campaign_id',
+        'opportunity_id',
+        'ad_type',
+        'duration_type',
+        'duration_value',
+        'amount_paid',
         'status',
         'payment_status',
-        'sponsored_from',
-        'sponsored_to',
+        'start_date',
+        'end_date',
+        'admin_notes',
+        'partner_notes',
     ];
 
     protected $casts = [
-        'sponsored_from' => 'datetime',
-        'sponsored_to' => 'datetime',
+        'start_date' => 'datetime',
+        'end_date' => 'datetime',
+        'amount_paid' => 'decimal:2',
     ];
+
+    // Relationships
+    public function partner()
+    {
+        return $this->belongsTo(User::class, 'partner_id');
+    }
 
     public function opportunity()
     {
         return $this->belongsTo(Opportunity::class);
     }
 
-    public function partner()
+    public function placements()
     {
-        return $this->belongsTo(User::class, 'partner_id');
+        return $this->hasMany(AdPlacement::class);
     }
 
-    public function adCampaign()
+    public function sponsoredOpportunity()
     {
-        return $this->belongsTo(AdCampaign::class);
+        return $this->hasOne(SponsoredOpportunity::class);
     }
 
     // Scopes
@@ -44,8 +57,8 @@ class SponsoredOpportunity extends Model
     {
         return $query->where('status', 'active')
                     ->where('payment_status', 'paid')
-                    ->where('sponsored_from', '<=', now())
-                    ->where('sponsored_to', '>=', now());
+                    ->where('start_date', '<=', now())
+                    ->where('end_date', '>=', now());
     }
 
     public function scopePending($query)
@@ -65,17 +78,12 @@ class SponsoredOpportunity extends Model
 
     public function scopeExpired($query)
     {
-        return $query->where('sponsored_to', '<', now());
+        return $query->where('end_date', '<', now());
     }
 
     public function scopeByType($query, $type)
     {
-        if ($type === 'admin') {
-            return $query->whereNull('ad_campaign_id');
-        } elseif ($type === 'campaign') {
-            return $query->whereNotNull('ad_campaign_id');
-        }
-        return $query;
+        return $query->where('ad_type', $type);
     }
 
     // Accessors
@@ -83,26 +91,21 @@ class SponsoredOpportunity extends Model
     {
         return $this->status === 'active' && 
                $this->payment_status === 'paid' && 
-               $this->sponsored_from <= now() && 
-               $this->sponsored_to >= now();
+               $this->start_date <= now() && 
+               $this->end_date >= now();
     }
 
     public function getIsExpiredAttribute()
     {
-        return $this->sponsored_to < now();
+        return $this->end_date < now();
     }
 
     public function getRemainingDaysAttribute()
     {
-        if ($this->sponsored_to && $this->sponsored_to > now()) {
-            return now()->diffInDays($this->sponsored_to);
+        if ($this->end_date && $this->end_date > now()) {
+            return now()->diffInDays($this->end_date);
         }
         return 0;
-    }
-
-    public function getSponsorshipTypeAttribute()
-    {
-        return $this->ad_campaign_id ? 'campaign' : 'admin';
     }
 
     // Methods
@@ -117,7 +120,12 @@ class SponsoredOpportunity extends Model
             return false;
         }
 
-        $this->update(['status' => 'active']);
+        $this->update([
+            'status' => 'active',
+            'start_date' => now(),
+            'end_date' => now()->addDays($this->duration_value * ($this->duration_type === 'weekly' ? 7 : 1)),
+        ]);
+
         return true;
     }
 
@@ -133,22 +141,9 @@ class SponsoredOpportunity extends Model
 
     public function reject($notes = null)
     {
-        $this->update(['status' => 'rejected']);
+        $this->update([
+            'status' => 'rejected',
+            'admin_notes' => $notes,
+        ]);
     }
 } 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 

@@ -26,6 +26,9 @@ class DatabaseSeeder extends Seeder
             PartnerSeeder::class,
             OpportunityTypeSeeder::class,
             OpportunitySeeder::class,
+            SubscriptionPlanSeeder::class,
+            AdSettingsSeeder::class,
+            PointsSettingsSeeder::class,
         ]);
     }
 }

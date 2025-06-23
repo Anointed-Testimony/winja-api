@@ -16,6 +16,18 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule)
     {
         // $schedule->command('inspire')->hourly();
+        
+        // Send opportunity digest emails to free users every 5 hours
+        $schedule->command('notifications:send-opportunity-digest')
+                ->everyFiveHours()
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->onSuccess(function () {
+                    \Log::info('Opportunity digest scheduled job completed successfully');
+                })
+                ->onFailure(function () {
+                    \Log::error('Opportunity digest scheduled job failed');
+                });
     }
 
     /**
