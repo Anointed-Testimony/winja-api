@@ -70,30 +70,25 @@ class OpportunityController extends Controller
             if ($opportunity->status === 'Active') {
                 // Get users to notify (exclude the creator if it's a partner)
                 $usersToNotify = User::where('status', 'active');
-                
-                // If created by a partner, exclude them from notifications
                 if ($user && $user->user_type === 'partner') {
                     $usersToNotify->where('id', '!=', $user->id);
                 }
-                
                 $users = $usersToNotify->get();
-                
-                // Send notifications asynchronously to avoid blocking the response
                 if ($users->isNotEmpty()) {
-                    // Use dispatch to run in background (requires queue setup)
-                    dispatch(function () use ($opportunity, $users) {
-                        try {
-                            NotificationService::sendOpportunityNotification($opportunity, $users);
-                        } catch (\Exception $e) {
-                            Log::error('Failed to send opportunity notifications', [
+                    foreach ($users as $notifyUser) {
+                        \App\Models\Notification::create([
+                            'user_id' => $notifyUser->id,
+                            'title' => 'New ' . ($opportunity->type->name ?? 'Opportunity') . ' Opportunity',
+                            'message' => 'A new ' . ($opportunity->type->name ?? 'opportunity') . ' opportunity has been posted: ' . $opportunity->title,
+                            'type' => 'opportunity',
+                            'data' => [
                                 'opportunity_id' => $opportunity->id,
-                                'error' => $e->getMessage(),
-                            ]);
-                        }
-                    })->afterResponse();
+                                'opportunity_type' => $opportunity->type->name ?? null,
+                            ],
+                        ]);
+                    }
                 }
-                
-                Log::info('Opportunity created and notifications queued', [
+                Log::info('Opportunity created and notifications created for all users', [
                     'opportunity_id' => $opportunity->id,
                     'title' => $opportunity->title,
                     'users_count' => $users->count(),
